@@ -1,0 +1,7 @@
+menuconfig QMC5883L
+	bool "QMC5883L magnetometer"
+	default y
+	depends on DT_HAS_QST_QMC5883L_ENABLED
+	select I2C
+	help
+	  Enable driver for QMC5883L I2C-based magnetometer.

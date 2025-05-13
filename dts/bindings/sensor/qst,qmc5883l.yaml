@@ -1,0 +1,43 @@
+description: |
+  The QMC5883L is a 3-axis digital magnetometer from QST.
+  It is used to measure the magnetic field in three dimensions.
+  The device communicates over I2C and has a range of ±8 gauss.
+  It is commonly used in applications such as compasses, navigation systems, and robotics.
+
+  Example definition in devicetree:
+
+    qmc5883l: qmc5883l@0d {
+        compatible = "qst,qmc5883l";
+        reg = <0x0d>;
+        sampling-frequency = <100>;
+        magnetic-field-range = <8>;
+        oversampling = <64>;
+    }
+
+compatible: "qst,qmc5883l"
+
+include: base.yaml
+
+properties:
+  sampling-frequency:
+    type: int
+    default: 100
+    enum: [10,50, 100, 200]
+    description: |
+      The frequency at which the sensor samples data.
+      The default value is 100 Hz.
+  magnetic-field-range:
+    type: int
+    default: 2
+    enum: [2, 8]
+    description: |
+      The range of the magnetic field that the sensor can measure.
+      The default value is 2 gauss.
+  oversampling:
+    type: int
+    default: 512
+    enum: [64, 128, 256, 512]
+    description: |
+      The oversampling rate of the sensor.
+      The default value is 512. 
+      
