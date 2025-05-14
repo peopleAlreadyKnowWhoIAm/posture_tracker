@@ -10,6 +10,7 @@
 / {
     chosen {
         zmk,battery = &vbatt;
+		zephyr,console = &cdc_acm_uart0;
     };
 
     // Node name must match original "EXT_POWER" label to preserve user settings.
@@ -22,4 +23,10 @@
     vbatt: vbatt {
         compatible = "zmk,battery-nrf-vddh";
     };
+};
+
+&zephyr_udc0 {
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+	};
 };

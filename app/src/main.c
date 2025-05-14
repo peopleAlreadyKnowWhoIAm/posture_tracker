@@ -33,58 +33,6 @@ int init_device(const struct device *const dev) {
         return 0;
 }
 
-
-static void print_gyro_data(const struct device *bmg160) {
-        struct sensor_value val[3];
-
-        if (sensor_channel_get(bmg160, SENSOR_CHAN_ACCEL_XYZ, val) < 0) {
-                printk("Cannot read bmg160 gyro channels.\n");
-                return;
-        }
-
-        char buf[255];
-
-        int res = snprintk(buf, sizeof(buf), "Accel m/s^2: X=%f, Y=%f, Z=%f\n",
-                           val[0].val1 + val[0].val2 / 1000000.0,
-                           val[1].val1 + val[1].val2 / 1000000.0,
-                           val[2].val1 + val[2].val2 / 1000000.0);
-        if (res < 0 || res == sizeof buf) {
-                LOG_ERR("Couldn't form gyro rep str");
-                return;
-        }
-        puts(buf);
-        res = bt_nus_send(NULL, buf, res);
-
-        if (res < 0 && (res != -EAGAIN) && (res != -ENOTCONN)) {
-                LOG_WRN("NUS send returned %d", res);
-        }
-}
-static void print_magnetometer_data(const struct device *hmc5883) {
-        struct sensor_value val[3];
-
-        if (sensor_channel_get(hmc5883, SENSOR_CHAN_MAGN_XYZ, val) < 0) {
-                printk("Cannot read hmc5883 magnetometer channels.\n");
-                return;
-        }
-
-        char buf[255];
-
-        int res = snprintk(buf, sizeof(buf), "Magnetometer (uT): X=%d, Y=%d, Z=%d\n",
-                           val[0].val1 ,
-                           val[1].val1,
-                           val[2].val1);
-        if (res < 0 || res == sizeof buf) {
-                LOG_ERR("Couldn't form magnetometer rep str");
-                return;
-        }
-
-        res = puts(buf);
-
-        // if (res < 0 && (res != -EAGAIN) && (res != -ENOTCONN)) {
-        //         LOG_WRN("NUS send returned %d", res);
-        // }
-}
-
 static void notif_enabled(bool enabled, void *ctx) {
         ARG_UNUSED(ctx);
 
@@ -112,11 +60,11 @@ int main(void) {
 
         printk("Zephyr not Example Application %s\n", APP_VERSION_STRING);
 
-        int err = bt_nus_cb_register(&nus_listener, NULL);
-        if (err) {
-                LOG_ERR("Failed to register NUS callback: %d\n", err);
-                return err;
-        }
+        // int err = bt_nus_cb_register(&nus_listener, NULL);
+        // if (err) {
+        //         LOG_ERR("Failed to register NUS callback: %d\n", err);
+        //         return err;
+        // }
 
 	// if (IS_ENABLED(CONFIG_SETTINGS)) {
 	// 	settings_load();

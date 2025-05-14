@@ -6,23 +6,25 @@
 
 #include "app/telemetry_storage.h"
 #include "app/vibration.h"
+#include "app/bluetooth_support.h"
 
-LOG_MODULE_REGISTER(posture_detection, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(posture_detection, LOG_LEVEL_INF);
 
 #define MOVEMENT_THRESHOLD 1000u
-
-#define POSTURE_DETECTION_TIMEOUT_S 10
 
 #define POSTURE_DETECTION_ANGLE_THRESHOLD 50
 
 #define POSTURE_NO_MOVEMENT_TIMEOUT_S (60u * 30u)
 
-#define TELEMETRY_SUBMIT_TIMEOUT_S (1u)
+#define TELEMETRY_SUBMIT_TIMEOUT_S (60u * 30u)
 
 #define HISTEREZIS_ANGLE 2
 
-#define POSTURE_CORRECT_ANGLE_X_OFFSET 5
-#define POSTURE_CORRECT_ANGLE_THRESHOLD 15
+static bool calibration_flag = false;
+static uint8_t posture_detection_timeout_s = 10;
+static uint8_t posture_correct_angle_x_offset = 5;
+static bool posture_detection_enabled = false;
+static uint8_t posture_correct_angle_threshold = 15;
 
 struct posture_work {
 	struct k_work work;
@@ -52,14 +54,14 @@ static inline bool is_posture_angle_correct(const struct posture_data *data,
 					    enum posture_state state) {
 	int histeresis_angle =
 	    (state == POSTURE_STATE_CORRECT) ? HISTEREZIS_ANGLE : -HISTEREZIS_ANGLE;
-	return (abs(data->x_angle + POSTURE_CORRECT_ANGLE_X_OFFSET) - histeresis_angle <
-		    POSTURE_CORRECT_ANGLE_THRESHOLD &&
-		abs(data->y_angle) - histeresis_angle < POSTURE_CORRECT_ANGLE_THRESHOLD);
+	return (abs(data->x_angle + posture_correct_angle_x_offset) - histeresis_angle <
+		    posture_correct_angle_threshold &&
+		abs(data->y_angle) - histeresis_angle < posture_correct_angle_threshold);
 }
 
 static void update_stats(struct posture_work *posture_work) {
 	unsigned seconds_state = (k_uptime_get() - posture_work->state_start_ts) / 1000;
-	LOG_INF("Posture state changed from %d, old state %u seconds", posture_work->state,
+	LOG_DBG("Posture state changed from %d, old state %u seconds", posture_work->state,
 		seconds_state);
 	struct telemetry *telemetry = &posture_work->telemetry;
 	if (posture_work->state != POSTURE_STATE_MOVEMENTS) {
@@ -97,15 +99,25 @@ static void process_data(struct k_work *work) {
 		wanted_state = POSTURE_STATE_CORRECT;
 	}
 
+	if (calibration_flag && wanted_state == POSTURE_STATE_CORRECT) {
+		calibration_flag = false;
+		posture_correct_angle_x_offset = data.x_angle;
+		LOG_INF("Calibration done, new offset %d", posture_correct_angle_x_offset);
+	}
+
+	if (!posture_detection_enabled && wanted_state != POSTURE_STATE_MOVEMENTS) {
+		wanted_state = POSTURE_STATE_INVALID;
+	}
+
 	uint32_t movement_time_diff_s =
 	    (k_uptime_get() - posture_work->movement_notification_ts) / 1000;
 	if (posture_work->state != POSTURE_STATE_MOVEMENTS &&
 	    movement_time_diff_s > POSTURE_NO_MOVEMENT_TIMEOUT_S) {
 		vibration_short_start();
+		bluetooth_support_notify_movement();
 
 		posture_work->telemetry.activeness_notifications++;
 		posture_work->movement_notification_ts = k_uptime_get();
-		// bluetooth_support_notify_no_movement();
 	}
 
 	bool is_telemetry_timeout_expired =
@@ -122,11 +134,11 @@ static void process_data(struct k_work *work) {
 	if (wanted_state == posture_work->state) {
 		bool is_incorrect_timeout_expired =
 		    (k_uptime_get() - posture_work->state_start_ts) / 1000 >
-		    POSTURE_DETECTION_TIMEOUT_S;
+		    posture_detection_timeout_s;
 		if (wanted_state == POSTURE_STATE_INCORRECT && is_incorrect_timeout_expired &&
 		    !posture_work->is_vibrating) {
 			posture_work->is_vibrating = true;
-			// blueooth_support_notify_posture();
+			bluetooth_support_notify_posture();
 			vibration_start();
 
 			posture_work->telemetry.posture_notifications++;
@@ -159,4 +171,19 @@ void posture_detection_update(struct posture_data *data) {
 	}
 	process_data_work.data = *data;
 	k_work_submit(&process_data_work.work);
+}
+void posture_detection_do_calibration(void) {
+	calibration_flag = true;
+}
+
+void posture_detection_set_timeout(uint8_t timeout) {
+	posture_detection_timeout_s = timeout;
+}
+
+void posture_detection_set_enabled(bool enabled) {
+	posture_detection_enabled = enabled;
+}
+
+void posture_detection_set_working_range(uint8_t range) {
+	posture_correct_angle_threshold = range;
 }

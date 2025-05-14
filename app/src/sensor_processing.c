@@ -5,7 +5,7 @@
 #include "app/sensor_processing.h"
 #include "app/posture_detection.h"
 
-LOG_MODULE_REGISTER(sensor_processing, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(sensor_processing, LOG_LEVEL_INF);
 
 #define M_PI 3.14159265358979323846
 
@@ -121,7 +121,7 @@ static void process_sensor(struct k_work *work) {
     unsigned max_acc_diff =
         max_accel_diff(arg_struct->last_measurements);
     struct angle angles = accel_to_avg_angle(arg_struct->last_measurements);
-    LOG_INF("Movement_detected: %d, Angles: %d, %d", max_acc_diff,
+    LOG_DBG("Movement_detected: %d, Angles: %d, %d", max_acc_diff,
             angles.main, angles.side);
     struct posture_data data = {
         .x_angle = angles.main,

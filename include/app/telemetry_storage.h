@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 struct telemetry {
@@ -12,3 +13,5 @@ struct telemetry {
 };
 
 void telemetry_storage_submit(struct telemetry *telemetry);
+
+int telemetry_get_portion(uint8_t *buf, size_t* len);
