@@ -1,5 +1,3 @@
-#include <stdatomic.h>
-
 #include "app/posture_detection.h"
 #include "app/telemetry_storage.h"
 #include "services/nus/nus_internal.h"
@@ -14,24 +12,30 @@
 #include "zephyr/logging/log.h"
 #include "zephyr/settings/settings.h"
 
+#include "app/bluetooth_support.h"
+
 LOG_MODULE_REGISTER(bt_support, LOG_LEVEL_DBG);
 
 enum bt_adv_type { BT_ADV_NONE, BT_ADV_OPEN, BT_ADV_DIR };
 
 #define DEVICE_NAME CONFIG_BT_DEVICE_NAME
 #define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
-#define POSTURE_NOTIF ((uint8_t[]){'N', 'P'})
-#define MOVEMENT_NOTIF ((uint8_t[]){'N', 'M'})
+#define POSTURE_NOTIF ((const uint8_t[]){'N', 'P'})
+#define MOVEMENT_NOTIF ((const uint8_t[]){'N', 'M'})
+#define STATE_MARKER ((const uint8_t)'S')
+#define SETTINGS_RESP_MARKER ((const uint8_t)'U')
 
-#define TRANSFER_DONE_MARKER ((uint8_t[]){'T', 'D'})
+#define TRANSFER_DONE_MARKER ((const uint8_t[]){'T', 'D'})
 
-#define SETTINGS_MARKER ((uint8_t[]){'S'})
-#define SETTING_CALIBRATION ((uint8_t[]){'C'})
-#define SETTING_WORKING_MARKER ((uint8_t[]){'W'})
-#define SETTING_TIMEOUT_MARKER ((uint8_t[]){'T'})
-#define SETTING_RANGE_MARKER ((uint8_t[]){'R'})
+#define STATE_REQ_MARKER ((const uint8_t[]){'R', 'S'})
+#define SETTINGS_REQ_MARKER ((const uint8_t[]){'R','U'})
+#define SETTINGS_MARKER ((const uint8_t[]){'S'})
+#define SETTING_CALIBRATION ((const uint8_t[]){'C'})
+#define SETTING_WORKING_MARKER ((const uint8_t[]){'W'})
+#define SETTING_TIMEOUT_MARKER ((const uint8_t[]){'T'})
+#define SETTING_RANGE_MARKER ((const uint8_t[]){'R'})
 
-#define TELEMETRY_MARKER ((uint8_t[]){'T', 'E', 'L', 'E', 'M'})
+#define TELEMETRY_MARKER ((const uint8_t[]){'T', 'E', 'L', 'E', 'M'})
 
 static const struct bt_data ad[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
@@ -251,6 +255,13 @@ static void bluetooth_send_buf(const uint8_t *buf, size_t len, bt_gatt_complete_
 	k_mutex_unlock(&bt_conn_mutex);
 }
 
+static void bluetooth_support_notify_settings(void) {
+	struct posture_settings settings = posture_detection_get_settings();
+	uint8_t buf[sizeof(SETTINGS_RESP_MARKER) + sizeof settings] = {SETTINGS_RESP_MARKER};
+	memcpy(buf + sizeof(SETTINGS_RESP_MARKER), &settings, sizeof settings );
+	bluetooth_send_buf(buf, sizeof buf, NULL);
+}
+
 static void parse_setting_payload(const uint8_t *data, size_t len) {
 	size_t offset = 0;
 	while (len > offset) {
@@ -269,19 +280,19 @@ static void parse_setting_payload(const uint8_t *data, size_t len) {
 			}
 			if (memcmp(data + offset, SETTING_TIMEOUT_MARKER,
 				   sizeof(SETTING_TIMEOUT_MARKER)) == 0) {
-				LOG_INF("Timeout marker settings received");
 				offset += sizeof(SETTING_TIMEOUT_MARKER);
+				LOG_INF("Timeout marker settings received %d", data[offset]);
 				posture_detection_set_timeout(data[offset]);
 				offset++;
 			} else if (memcmp(data + offset, SETTING_WORKING_MARKER,
 					  sizeof(SETTING_WORKING_MARKER)) == 0) {
-				LOG_INF("Working marker settings received");
+				LOG_INF("Working marker settings received %d", data[offset]);
 				offset += sizeof(SETTING_WORKING_MARKER);
 				posture_detection_set_enabled(data[offset]);
 				offset++;
 			} else if (memcmp(data + offset, SETTING_RANGE_MARKER,
 					  sizeof(SETTING_RANGE_MARKER)) == 0) {
-				LOG_INF("Range marker settings received");
+				LOG_INF("Range marker settings received %d", data[offset]);
 				offset += sizeof(SETTING_RANGE_MARKER);
 				posture_detection_set_working_range(data[offset]);
 				offset++;
@@ -291,39 +302,56 @@ static void parse_setting_payload(const uint8_t *data, size_t len) {
 			}
 		}
 	}
+	bluetooth_support_notify_settings();
 }
 
-static void transfer_telemetry_internal(void);
 static void transfer_telemetry_callback(struct bt_conn *, void *);
 
-static void transfer_telemetry_internal(void) {
+struct telemetry_transfer_work {
+	struct k_work work;
+	unsigned piece;
+};
+
+static void transfer_telemetry(struct k_work *work) {
+	(void)work;
+	struct telemetry_transfer_work *telemetry_trans =
+	    CONTAINER_OF(work, struct telemetry_transfer_work, work);
 	static uint8_t telemetry_buf[500];
-	size_t len = sizeof(telemetry_buf);
-	int err = telemetry_get_portion(telemetry_buf, &len);
+	telemetry_buf[0] = telemetry_trans->piece;
+	telemetry_trans->piece++;
+	size_t len = sizeof(telemetry_buf) - 1;
+	int err = telemetry_get_portion(telemetry_buf + 1, &len);
 	if (err < 0) {
 		LOG_ERR("Failed to get telemetry portion (err %d)", err);
 		bluetooth_send_buf(TRANSFER_DONE_MARKER, sizeof(TRANSFER_DONE_MARKER), NULL);
 		return;
 	}
-	if (err == 1) {
-		if (len > 0) {
-			bluetooth_send_buf(telemetry_buf, len, NULL);
-		}
+	if (err == 1 && len == 0) {
+		LOG_INF("Done telemetry transfer");
 		bluetooth_send_buf(TRANSFER_DONE_MARKER, sizeof(TRANSFER_DONE_MARKER), NULL);
-	} else {
-		bluetooth_send_buf(telemetry_buf, len, transfer_telemetry_callback);
+		return;
 	}
+	bluetooth_send_buf(telemetry_buf, len + 1, transfer_telemetry_callback);
 }
 
-static void transfer_telemetry(struct k_work *work) {
-	(void)work;
-	transfer_telemetry_internal();
-}
+static struct telemetry_transfer_work telemetry_work;
 
-static K_WORK_DEFINE(telemetry_work, transfer_telemetry);
+static void start_telemetry_transfer(void) {
+	k_work_init(&telemetry_work.work, &transfer_telemetry);
+	telemetry_work.piece = 0;
+	// Reset internal pointer
+	(void)telemetry_get_portion(NULL, NULL);
+	k_work_submit(&telemetry_work.work);
+}
 
 static void transfer_telemetry_callback(struct bt_conn *, void *) {
-	k_work_submit(&telemetry_work);
+	k_work_init(&telemetry_work.work, &transfer_telemetry);
+	k_work_submit(&telemetry_work.work);
+}
+
+void bluetooth_support_notify_state(enum posture_state state) {
+	uint8_t send_buf[] = {STATE_MARKER, (uint8_t)state};
+	bluetooth_send_buf(send_buf, sizeof send_buf, NULL);
 }
 
 static void bt_data_received(struct bt_conn *conn, const void *data, uint16_t len, void *) {
@@ -345,16 +373,24 @@ static void bt_data_received(struct bt_conn *conn, const void *data, uint16_t le
 	} else if (len == sizeof(TELEMETRY_MARKER) &&
 		   memcmp(data, TELEMETRY_MARKER, sizeof(TELEMETRY_MARKER)) == 0) {
 		LOG_INF("Telemetry marker received");
-		// Reset internal pointer
-		(void)telemetry_get_portion(NULL, NULL);
-		k_work_submit(&telemetry_work);
+		start_telemetry_transfer();
+	} else if (len == sizeof(STATE_REQ_MARKER) && memcmp(data, STATE_REQ_MARKER, sizeof(STATE_REQ_MARKER)) == 0) {
+		LOG_INF("Sending state");
+		bluetooth_support_notify_state(posture_detection_get_state());
+	} else if (len == sizeof(SETTINGS_REQ_MARKER) && memcmp(data, SETTINGS_REQ_MARKER, sizeof(SETTINGS_REQ_MARKER)) == 0) {
+		LOG_INF("Sending sett");
+		bluetooth_support_notify_settings();
 	} else {
 		LOG_INF("Unknown data received");
 	}
 }
 
+static void notif_enabled(bool notif, void *) {
+	LOG_INF("Notif status changed %d", notif);
+}
+
 static struct bt_nus_cb nus_callbacks = {
-    .notif_enabled = NULL,
+    .notif_enabled = notif_enabled,
     .received = bt_data_received,
 };
 
@@ -369,7 +405,6 @@ static int bluetooth_init(void) {
 	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
 		settings_load();
 	}
-	bt_unpair(BT_ID_DEFAULT, NULL);
 
 	bt_conn_cb_register(&conn_callbacks);
 	bt_conn_auth_cb_register(&auth_cbs);

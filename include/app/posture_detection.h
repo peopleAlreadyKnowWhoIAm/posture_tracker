@@ -9,6 +9,13 @@ struct posture_data {
     unsigned cm_s2_max_accel_diff;
 };
 
+struct posture_settings {
+    uint8_t detection_time;
+    uint8_t detection_range;
+    bool is_notifying;
+    int8_t x_angle_calibration;
+};
+
 enum posture_state {
     POSTURE_STATE_CORRECT,
     POSTURE_STATE_INVALID,
@@ -24,3 +31,4 @@ void posture_detection_do_calibration(void);
 void posture_detection_set_timeout(uint8_t timeout);
 void posture_detection_set_enabled(bool enabled);
 void posture_detection_set_working_range(uint8_t range);
+struct posture_settings posture_detection_get_settings(void);

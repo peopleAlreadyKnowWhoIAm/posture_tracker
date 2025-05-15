@@ -21,10 +21,13 @@ LOG_MODULE_REGISTER(posture_detection, LOG_LEVEL_INF);
 #define HISTEREZIS_ANGLE 2
 
 static bool calibration_flag = false;
-static uint8_t posture_detection_timeout_s = 10;
-static uint8_t posture_correct_angle_x_offset = 5;
-static bool posture_detection_enabled = false;
-static uint8_t posture_correct_angle_threshold = 15;
+
+static struct posture_settings settings = {
+	.detection_range = 15,
+	.detection_time = 10,
+	.is_notifying = true,
+	.x_angle_calibration = 5,
+};
 
 struct posture_work {
 	struct k_work work;
@@ -54,9 +57,9 @@ static inline bool is_posture_angle_correct(const struct posture_data *data,
 					    enum posture_state state) {
 	int histeresis_angle =
 	    (state == POSTURE_STATE_CORRECT) ? HISTEREZIS_ANGLE : -HISTEREZIS_ANGLE;
-	return (abs(data->x_angle + posture_correct_angle_x_offset) - histeresis_angle <
-		    posture_correct_angle_threshold &&
-		abs(data->y_angle) - histeresis_angle < posture_correct_angle_threshold);
+	return (abs(data->x_angle + settings.x_angle_calibration) - histeresis_angle <
+		    settings.detection_range &&
+		abs(data->y_angle) - histeresis_angle < settings.detection_range);
 }
 
 static void update_stats(struct posture_work *posture_work) {
@@ -101,11 +104,11 @@ static void process_data(struct k_work *work) {
 
 	if (calibration_flag && wanted_state == POSTURE_STATE_CORRECT) {
 		calibration_flag = false;
-		posture_correct_angle_x_offset = data.x_angle;
-		LOG_INF("Calibration done, new offset %d", posture_correct_angle_x_offset);
+		settings.x_angle_calibration = (int8_t)data.x_angle;
+		LOG_INF("Calibration done, new offset %d", settings.x_angle_calibration);
 	}
 
-	if (!posture_detection_enabled && wanted_state != POSTURE_STATE_MOVEMENTS) {
+	if (!settings.is_notifying && wanted_state != POSTURE_STATE_MOVEMENTS) {
 		wanted_state = POSTURE_STATE_INVALID;
 	}
 
@@ -134,7 +137,7 @@ static void process_data(struct k_work *work) {
 	if (wanted_state == posture_work->state) {
 		bool is_incorrect_timeout_expired =
 		    (k_uptime_get() - posture_work->state_start_ts) / 1000 >
-		    posture_detection_timeout_s;
+		    settings.detection_time;
 		if (wanted_state == POSTURE_STATE_INCORRECT && is_incorrect_timeout_expired &&
 		    !posture_work->is_vibrating) {
 			posture_work->is_vibrating = true;
@@ -160,6 +163,7 @@ static void process_data(struct k_work *work) {
 	posture_work->state = wanted_state;
 	LOG_INF("Posture state changed to %d", posture_work->state);
 	posture_work->state_start_ts = k_uptime_get();
+	bluetooth_support_notify_state(wanted_state);
 }
 
 static struct posture_work process_data_work = {
@@ -177,13 +181,21 @@ void posture_detection_do_calibration(void) {
 }
 
 void posture_detection_set_timeout(uint8_t timeout) {
-	posture_detection_timeout_s = timeout;
+	settings.detection_time = timeout;
 }
 
 void posture_detection_set_enabled(bool enabled) {
-	posture_detection_enabled = enabled;
+	settings.is_notifying = enabled;
 }
 
 void posture_detection_set_working_range(uint8_t range) {
-	posture_correct_angle_threshold = range;
+	settings.detection_range = range;
+}
+
+enum posture_state posture_detection_get_state(void) {
+	return process_data_work.state;
+}
+
+struct posture_settings posture_detection_get_settings() {
+	return settings;
 }

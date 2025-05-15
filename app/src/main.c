@@ -33,30 +33,8 @@ int init_device(const struct device *const dev) {
         return 0;
 }
 
-static void notif_enabled(bool enabled, void *ctx) {
-        ARG_UNUSED(ctx);
-
-        printk("%s() - %s\n", __func__, (enabled ? "Enabled" : "Disabled"));
-}
-
-static void received(struct bt_conn *conn, const void *data, uint16_t len,
-                     void *ctx) {
-        ARG_UNUSED(conn);
-        ARG_UNUSED(ctx);
-
-        printk("%s() - Len: %d, Message: %.*s\n", __func__, len, len,
-               (char *)data);
-}
-
-static struct bt_nus_cb nus_listener = {
-    .notif_enabled = notif_enabled,
-    .received = received,
-};
-
 int main(void) {
         const struct device *const bmi160 = DEVICE_DT_GET_ANY(bosch_bmi160);
-
-        const struct device *const qmc5883 = DEVICE_DT_GET_ANY(qst_qmc5883l);
 
         printk("Zephyr not Example Application %s\n", APP_VERSION_STRING);
 
@@ -72,11 +50,6 @@ int main(void) {
 
         if (init_device(bmi160)) {
                 LOG_ERR("Gyro not ready");
-                return 0;
-        }
-
-        if (init_device(qmc5883)) {
-                LOG_ERR("Magnetometer not ready");
                 return 0;
         }
 
