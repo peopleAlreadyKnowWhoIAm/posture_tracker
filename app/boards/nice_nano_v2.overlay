@@ -1,11 +1,32 @@
 / {
-	gpio_pin {
+	gpio_keys {
 		compatible = "gpio-keys";
-		vibration_output: output_pin  {
-			label = "Vibration Output";
-			gpios = <&gpio0 22 GPIO_ACTIVE_HIGH>;
+		polling-mode;
+		no-disconnect;
+		debounce-interval-ms = <80>;
+		button_0: button_0 {
+			label = "Button 0";
+			gpios = <&gpio1 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
+longpress {
+        compatible = "zephyr,input-longpress";
+        input-codes = <INPUT_KEY_0>;
+        short-codes = <INPUT_KEY_POWER>;
+        long-codes = <INPUT_KEY_DELETE>;
+        long-delay-ms = <2000>;
+};
+
+	gpio_outputs {
+		compatible = "gpio-leds";
+		vibration_output: gpio_output  {
+			label = "Vibration Output";
+			gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
+		};
+
+	};
+
 
 };
 

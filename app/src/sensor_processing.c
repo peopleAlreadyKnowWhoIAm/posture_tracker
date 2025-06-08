@@ -61,8 +61,8 @@ accel_to_avg_angle(const struct accel_cm_s2_ts accels[MEASUREMENTS_POOL]) {
   y /= MEASUREMENTS_POOL;
   z /= MEASUREMENTS_POOL;
 
-  float main_angle_rad = atan2f((float)y, (float)x);
-  float side_angle_rad = atan2f((float)z, (float)x);
+  float main_angle_rad = atan2f((float)z, (float)y);
+  float side_angle_rad = atan2f((float)x, (float)y);
   return (struct angle){
       .main = (int16_t)(main_angle_rad * 180.0f / (float)M_PI),
       .side = (int16_t)(side_angle_rad * 180.0f / (float)M_PI),
@@ -129,7 +129,6 @@ static void process_sensor(struct k_work *work) {
         .cm_s2_max_accel_diff = max_acc_diff,
     };
     posture_detection_update(&data);
-    // TODO export data to other consumers
 
     arg_struct->measurement_used = 0;
     arg_struct->start_ts = k_uptime_get();

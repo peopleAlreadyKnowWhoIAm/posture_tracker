@@ -39,8 +39,11 @@ enum bt_adv_type { BT_ADV_NONE, BT_ADV_OPEN, BT_ADV_DIR };
 
 static const struct bt_data ad[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-    BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
     BT_DATA_BYTES(BT_DATA_UUID128_ALL, BT_UUID_NUS_SRV_VAL),
+};
+
+static const struct bt_data sd[] = {
+    BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
 };
 
 static enum bt_adv_type bt_adv_state;
@@ -102,14 +105,14 @@ static int update_advertisement(void) {
 		// struct bt_le_adv_param adv_param = *BT_LE_ADV_CONN_DIR_LOW_DUTY(&peer_address);
 		// adv_param.options |= BT_LE_ADV_OPT_DIR_ADDR_RPA;
 		// int err = bt_le_adv_start(&adv_param, NULL, 0, NULL, 0);
-		int err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
+		int err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 		if (err) {
 			LOG_ERR("Advertising failed to start (err %d)", err);
 			return err;
 		}
 		bt_adv_state = BT_ADV_DIR;
 	} else if (desired_adv_type == BT_ADV_OPEN) {
-		int err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
+		int err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 		if (err) {
 			LOG_ERR("Advertising failed to start (err %d)", err);
 			return err;
@@ -302,6 +305,7 @@ static void parse_setting_payload(const uint8_t *data, size_t len) {
 			}
 		}
 	}
+	posture_detection_save_settings();
 	bluetooth_support_notify_settings();
 }
 
@@ -413,6 +417,7 @@ static int bluetooth_init(void) {
 	k_work_submit(&update_advertisement_work);
 	return 0;
 }
+SYS_INIT(bluetooth_init, APPLICATION, 1);
 
 void bluetooth_support_notify_posture(void) {
 	bluetooth_send_buf(POSTURE_NOTIF, sizeof(POSTURE_NOTIF), NULL);
@@ -422,4 +427,8 @@ void bluetooth_support_notify_movement(void) {
 	bluetooth_send_buf(MOVEMENT_NOTIF, sizeof(MOVEMENT_NOTIF), NULL);
 }
 
-SYS_INIT(bluetooth_init, APPLICATION, 1);
+void bluetooth_remove_bonded_peer(void) {
+	LOG_INF("Removing bonded peer");
+	bt_unpair(BT_ID_DEFAULT, NULL);
+	update_advertisement();
+}

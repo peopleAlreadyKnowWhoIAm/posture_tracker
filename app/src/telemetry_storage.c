@@ -109,19 +109,6 @@ int telemetry_get_portion(uint8_t *buf, size_t *len) {
         *len = write_off;
         return 0;
 }
-        
-// TODO count all telemetry pieces
-// static int telemetry_walk_cb(struct fcb_entry_ctx *loc_ctx, void *arg) {
-//         struct telemetry telemetry;
-//         int rc = flash_area_read(loc_ctx->fap, FCB_ENTRY_FA_DATA_OFF(loc_ctx->loc),
-//                                  &telemetry, sizeof(telemetry));
-//         if (rc != 0) {
-//                 LOG_ERR("FCB read failed: %d", rc);
-//                 return rc;
-//         }
-//         LOG_INF("Telemetry data: %d", telemetry.timestamp);
-//         return 0;
-// }
 
 static int telemetry_storage_init(void) {
 	int rc = fcb_init(FIXED_PARTITION_ID(telemetry_partition), &telemetry_storage);

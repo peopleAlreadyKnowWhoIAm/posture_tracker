@@ -7,6 +7,7 @@
 #include "app/telemetry_storage.h"
 #include "app/vibration.h"
 #include "app/bluetooth_support.h"
+#include "zephyr/settings/settings.h"
 
 LOG_MODULE_REGISTER(posture_detection, LOG_LEVEL_INF);
 
@@ -20,14 +21,7 @@ LOG_MODULE_REGISTER(posture_detection, LOG_LEVEL_INF);
 
 #define HISTEREZIS_ANGLE 2
 
-static bool calibration_flag = false;
-
-static struct posture_settings settings = {
-	.detection_range = 15,
-	.detection_time = 10,
-	.is_notifying = true,
-	.x_angle_calibration = 5,
-};
+#define SETTINGS_NAME "posture_detection"
 
 struct posture_work {
 	struct k_work work;
@@ -42,6 +36,41 @@ struct posture_work {
 
 	struct telemetry telemetry;
 };
+
+
+static bool calibration_flag = false;
+
+static struct posture_settings settings = {
+	.detection_range = 15,
+	.detection_time = 10,
+	.is_notifying = true,
+	.x_angle_calibration = 5,
+};
+
+static int settings_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg)
+{
+    int rc;
+	LOG_INF("Settings set: %s, len: %zu", name, len);
+    if (*name == '\0') {
+        if (len != sizeof(settings)) {
+            return -EINVAL;
+        }
+
+        rc = read_cb(cb_arg, &settings, sizeof(settings));
+        if (rc < 0) {
+            return rc;
+        }
+    }
+
+    return 0;
+}
+
+static int settings_export(int (*cb)(const char *name, const void *value, size_t val_len))
+{
+    return cb(SETTINGS_NAME, &settings, sizeof(settings));
+}
+
+SETTINGS_STATIC_HANDLER_DEFINE(posture_detection, "posture_detection", NULL, settings_set, NULL, settings_export);
 
 static inline bool is_posture_angle_in_valid_range(const struct posture_data *data,
 						   enum posture_state state) {
@@ -198,4 +227,13 @@ enum posture_state posture_detection_get_state(void) {
 
 struct posture_settings posture_detection_get_settings() {
 	return settings;
+}
+
+void posture_detection_save_settings(void) {
+	int rc = settings_save();
+	if (rc < 0) {
+		LOG_ERR("Failed to save settings %d", rc);
+	} else {
+		LOG_INF("Settings saved");
+	}
 }

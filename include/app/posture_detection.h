@@ -32,3 +32,4 @@ void posture_detection_set_timeout(uint8_t timeout);
 void posture_detection_set_enabled(bool enabled);
 void posture_detection_set_working_range(uint8_t range);
 struct posture_settings posture_detection_get_settings(void);
+void posture_detection_save_settings(void);
